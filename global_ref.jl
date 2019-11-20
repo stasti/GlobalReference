@@ -152,7 +152,7 @@ function goalIB(dims, Pg, Pgxi_ai, Pg_ai, Pxi, beta::Float64)
 
 
 		println( (i, i1, i2) )
-if i in (1, 20)
+if i in (1, 20) && false
 		for gi in 1:dimG
 			println("gi=$(gi)")
 			display(reshape(Pg_h[gi, :, 1, 1, 1, 1], (dimX1, dimX2))); println()
