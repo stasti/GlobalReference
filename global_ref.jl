@@ -1,16 +1,9 @@
 module GlobalRef
 
-# using Debugger
-
 # using PyPlot: figure, close, plot, show
-using DP
+using __DP
 using GridWorld
 using ProbUtils
-
-macro dispSize(P)
-	return :( println(size($P)) )
-end
-
 
 idxG, idxH, idxXi, idxAi, idxXj, idxAj = (1, 2, 3, 4, 5, 6)
 
@@ -22,7 +15,7 @@ Dkl(P, Q, dims) = sum( log.((P ./ Q ) .^P), dims=dims )
 
 pgxi_xj(Pgxiai_xj, Pgxi_ai) = ( sum(Pgxiai_xj .* Pgxi_ai, dims=4) )
 
-pxi_xj(Pgxiai_xj, Pgxi_ai, Pg) = ( sum(Pgxiai_xj .* Pgxi_ai .* Pg, dims=[1, 4]) )
+pxi_xj(Pgxiai_xj, Pgxi_ai, Pg) = ( sum(Pgxiai_xj .* Pgxi_ai .* Pg, dims=[idxG, idxAi]) )
 
 pgxi(Pgxi_xj, g) = ((Pgxi_xj[g, 1, :, 1, :, 1] ^ 20)[1, :]) 
 
@@ -45,190 +38,150 @@ ph_ai(Phxi_ai, Pxi) = sum(Phxi_ai .* Pxi, dims=idxXi)
 function pg_h(Ph, Pxi, Pgxi_ai, Phxi_ai, Pg_ai, Ph_ai, beta)
 
 	Dkl1 = Dkl(Pgxi_ai, Phxi_ai, (idxAi,))
+
 	Dkl2 = Dkl(Pg_ai, Ph_ai, (idxAi,))
 
-# 	display("Dkl2:"); println()
-# 	display(Dkl2); println()
-
-
 	P = Ph .* (exp.(beta*(sum(Pxi .* Dkl1, dims=idxXi) - Dkl2)));
-	res =	P ./ sum(P, dims=idxH)
-# 	println("ssss")
-# 	display(res); println()
-	return res
+
+	P ./ sum(P, dims=idxH)
 end
 
 Igh(Pgh, Ph, Pg) =  sum( log.(( Pgh ./ (Ph .* Pg)) .^ Pgh ) )
 
-Ih_xiai(Phxiai, Ph_ai, Phxi_ai)= (Ph_xiai = Phxiai ./ sum(Phxiai, dims=[3, 4]); sum(((Phxi_ai ./ Ph_ai) .^ Phxiai)))
+Ih_xiai(Phxiai, Ph_ai, Phxi_ai)= (Ph_xiai = Phxiai ./ sum(Phxiai, dims=[3, 4]); sum(log.((Phxi_ai ./ Ph_ai) .^ Phxiai)))
 
 L(Pgh, Ph, Pg, Phxiai, Ph_ai, Phxi_ai, beta) = Igh(Pgh, Ph, Pg) - beta*Ih_xiai(Phxiai, Ph_ai, Phxi_ai)
 
-function goalIB(dims, Pgxi_ai, Pg_idx::Int, Pxi, beta::Float64)
+pgxi_ai_update(Pxi_ai, beta, Qg) = ( Pgxi_ai = Pxi_ai .* exp.(beta*Qg); Pgxi_ai ./ sum(Pgxi_ai, dims=idxAi) ) 
 
-	dimG, dimH =  9, 9
+function pgxi_ai_state( dims, Pg::Array{Float64}, Qg::Array{Float64}, Pgxiai_xj::Array{Float64}, beta::Float64 )
 
-		Pg      	= ones(dimG, 1, 1, 1, 1, 1)
-# 	Pg      	= zeros(dimG, 1, 1, 1, 1, 1)
-# 	Pg[Pg_idx, 1, 1, 1, 1, 1] 	= 1.0
-		Pg = Normalize(Pg, (idxG, ))
+	dimX1, dimX2, dimA, dimG, dimH = dims
+	dimX = dimX1*dimX2
+	#here dimH equals 1, as no compression yet
 
-	Pg_ai   	= pg_ai(Pgxi_ai, Pxi)
 
-	# 	display(reshape(Pxi, (3, 3))); println()
-	# 	display(Pgxi_ai[Pg_idx, 1, :, :, 1, 1]); println()
-	# 	display(Pg_ai[:, 1, 1, :, 1, 1]); println()
+	Pgxi_ai = Normalize( rand(dimG, 1, dimX, dimA, 1, 1), (idxAi,) )
 
-	# 	return
+	Pxi_xj  = pxi_xj(Pgxiai_xj, Pgxi_ai, Pg)
 
-	# p(s, a, h, g) = p(a|s,g)p(g|h)p(h)p(s) 
-	# p(a | s, h) = sum(g) p(a|s,g) p(g|h)
+	Pxi     = pxi(Pxi_xj)
+
+	Pg_ai   = sum( Pgxi_ai .* Pxi, dims=idxXi ) 	
+
+	for i in 1:200
+
+		Pgxi_ai = pgxi_ai_update(Pg_ai, beta, Qg)
+
+		Pxi_xj  = pxi_xj(Pgxiai_xj, Pgxi_ai, Pg)
+
+		Pxi     = pxi(Pxi_xj)
+
+		Pg_ai   = sum( Pgxi_ai .* Pxi, dims=idxXi ) 	
+	end
+
+	return Pgxi_ai, Pg_ai, Pxi
+end
+function pgxi_ai_goal( dims, Pg::Array{Float64}, Qg::Array{Float64}, Pgxiai_xj::Array{Float64}, beta::Float64 )
+
+	dimX1, dimX2, dimA, dimG, dimH = dims
+	dimX = dimX1*dimX2
+	#here dimH equals 1, as no compression yet
+
+
+	Pgxi_ai = Normalize( rand(dimG, 1, dimX, dimA, 1, 1), (idxAi,) )
+
+	Pxi_xj  = pxi_xj(Pgxiai_xj, Pgxi_ai, Pg)
+
+	Pxi     = pxi(Pxi_xj)
+
+	Pxi_ai   = sum( Pgxi_ai .* Pg, dims=idxG ) 	
+
+	for i in 1:200
+
+		Pgxi_ai = pgxi_ai_update(Pxi_ai, beta, Qg)
+
+		Pxi_xj  = pxi_xj(Pgxiai_xj, Pgxi_ai, Pg)
+
+		Pxi     = pxi(Pxi_xj)
+
+		Pxi_ai   = sum( Pgxi_ai .* Pg, dims=idxG ) 	
+	end
+
+	return Pgxi_ai, Pxi_ai, Pxi
+end
+
+
+function goalIB(dims, Pg, Pgxi_ai, Pg_ai, Pxi, beta::Float64)
+
+	dimX1, dimX2, dimA, dimG, dimH  = dims
+
+	dimX = dimX1*dimX2
 
 	Pg_h    	= Normalize(rand(dimG, dimH, 1, 1, 1, 1), (idxH, ))
 
 	Ph      	= ph(Pg_h, Pg)
+
 	Ph_g    	= ph_g(Pg_h, Pg, Ph) 
 
 	Phxi_ai 	= phxi_ai(Pgxi_ai, Ph_g)
-	Ph_ai   	= ph_ai(Phxi_ai, Pxi)
-	Phxiai 		= Phxi_ai .* Ph .* Pxi
-	# 	Ph              = sum(Phxiai, dims=(idxXi, idxAi))
-	# 
-	println("dddd")
-	display(Ph[1, :, 1, 1, 1, 1]); println()
-	display(Pg_h[:, :, 1, 1, 1, 1]); println()
 
-	for i in 1:2
+	Ph_ai   	= sum(Pg_ai .* Ph_g, dims=idxG)
+
+	Phxiai 		= Phxi_ai .* Ph .* Pxi
+
+	for i in 1:20
 
 		Pg_h 		= pg_h(Ph, Pxi, Pgxi_ai, Phxi_ai, Pg_ai, Ph_ai, beta) 
 
-		display(Pg_h[:, :, 1, 1, 1, 1]); println()
-		display(Ph[1, :, 1, 1, 1, 1]); println()
-
 		Ph      	= ph(Pg_h, Pg)
+
 		Ph_g    	= ph_g(Pg_h, Pg, Ph) 
 
 		Phxi_ai 	= phxi_ai(Pgxi_ai, Ph_g)
-		Ph_ai   	= ph_ai(Phxi_ai, Pxi)
+
+		Ph_ai   	= sum(Pg_ai .* Ph_g, dims=idxG)
+
 		Phxiai 		= Phxi_ai .* Ph .* Pxi
-		# 
-		# 		Ph      	= ph(Pg_h, Pg)
-		# 		Ph_g    	= ph_g(Pg_h, Pg, Ph) 
-		# 		Phxi_ai 	= phxi_ai(Pgxi_ai, Ph_g)
-		# 		Ph_ai   	= ph_ai(Phxi_ai, Pxi)
-		# 		Phxiai 		= Phxi_ai .* Ph_ai .* Pxi
-		# 
-		# 		println()
-		# 		println()
-		# 		display(reshape(Pg_h[:, :, 1, 1, 1, 1], (dimG, dimH))); println()
-		# 		display(reshape(Ph_g[:, :, 1, 1, 1, 1], (dimG, dimH))); println()
-		# 		display(reshape(Ph[1, :, 1, 1, 1, 1], (3, 3))); println()
-		# 
-		Pgh 	= pgh(Pg_h, Pg)
-		# 		Ph_ai 	= ph_ai(Phxi_ai, Pxi)
-		# 
-		# 		Phxiai = Phxi_ai .* Ph_ai .* Pxi
-		# 
-		i1 	= Igh(Pgh, Ph, Pg) 
-		i2 	= Ih_xiai(Phxiai, Ph_ai, Phxi_ai) 
-
-		println((i, i1, i2))
-	end
-
-	return Pg_h, Ph, Phxi_ai
-end
-function goalIB(dims, Pgxi_ai, Pg::Array{Float64}, Pxi, beta::Float64)
-
-	dimG, dimH =  9, 9
-
-	Pg_h    = Normalize(rand(dimG, dimH, 1, 1, 1, 1), (2, ))
-
-	Pg_ai   = pg_ai(Pgxi_ai, Pxi)
-
-	Ph = []
-	Phxi_ai = []
-
-	for i in 1:5
-
-		Pg_h 	= pg_h(Ph, Pxi, Pgxi_ai, Phxi_ai, Pg_ai, Ph_ai, beta) 
-
-		Ph      = ph(Pg_h, Pg)
-		Ph_g    = ph_g(Pg_h, Pg, Ph) 
-		Phxi_ai = phxi_ai(Pgxi_ai, Ph_g)
-		Ph_ai   = ph_ai(Phxi_ai, Pxi)
-
-
-
-		println()
-		println()
-		display(reshape(Pg_h[:, :, 1, 1, 1, 1], (dimG, dimH))); println()
-		display(reshape(Ph_g[:, :, 1, 1, 1, 1], (dimG, dimH))); println()
-		display(reshape(Ph[1, :, 1, 1, 1, 1], (3, 3))); 
-		println()
 
 		Pgh 	= pgh(Pg_h, Pg)
-		Ph_ai 	= ph_ai(Phxi_ai, Pxi)
-
-		Phxiai = Phxi_ai .* Ph_ai .* Pxi
 
 		i1 	= Igh(Pgh, Ph, Pg) 
+
 		i2 	= Ih_xiai(Phxiai, Ph_ai, Phxi_ai) 
 
-		println((i, i1, i2))
-	end
 
-	return Pg_h, Ph, Phxi_ai
-end
-
-function __goalIB(dims, Pgxi_ai, Pg, Pxi, BETA::StepRangeLen)
-
-	I1 = []
-	I2 = []
-	L  = []
-	for beta in BETA
-		println(beta)
-		L_tmp  = zeros(5)
-		I1_tmp = zeros(5)
-		I2_tmp = zeros(5)
-		for i in 1:5
-			Pg_h, Ph, Phxi_ai = goalIB(dims, Pgxi_ai, Pg, Pxi, beta)
-			Pgh = pgh(Pg_h, Pg)
-			Ph_ai = ph_ai(Phxi_ai, Pxi)
-			Phxiai = Phxi_ai .* Ph_ai .* Pxi
-
-			i1 = Igh(Pgh, Ph, Pg) 
-			i2 = Ih_xiai(Phxiai, Ph_ai, Phxi_ai) 
-
-			# 	println((size(i1), size(i2)))
-			# 	display(i1); println()
-			# 	display(i2); println()
-
-
-
-			l  = Igh(Pgh, Ph, Pg) - beta*Ih_xiai(Phxiai, Ph_ai, Phxi_ai)
-
-			L_tmp[i]  = l
-			I1_tmp[i] = i1
-			I2_tmp[i] = i2
+		println( (i, i1, i2) )
+if i in (1, 20)
+		for gi in 1:dimG
+			println("gi=$(gi)")
+			display(reshape(Pg_h[gi, :, 1, 1, 1, 1], (dimX1, dimX2))); println()
 		end
-		val, idx = findmin(L_tmp)
-		push!(I1, I1_tmp[idx])
-		push!(I2, I2_tmp[idx])
-		push!( L,  L_tmp[idx])
+# 		display(reshape(Ph[1, :, 1, 1, 1, 1], (dimX1, dimX2))); println()
+end
 	end
 
-	return I1, I2, L
+	return Pg_h, Ph, Phxi_ai
 
 end
 
 
 function main()
 
-	dimX1, dimX2, dimA = (3, 3, 5)
+	dimX1, dimX2, dimA = (10, 10, 5)
 	dimX = dimX1*dimX2
-	dimG = dimX
-	dimH = dimX
-	global dims = (dimX1, dimX2, dimA, dimX, 1)
+	dimG = -1
+	dimH = -1
+
+	dims = (dimX1, dimX2, dimA, dimG, dimH)
+
+	C    = CreateWalls(dims, "GlobalRef5x5r9")
+	G    = GenerateGoalSet(dims, "fullX", C)
+
+	dimG = length(G)
+	dimH = dimG
+		
+	dims = (dimX1, dimX2, dimA, dimG, dimH)
 
 	Pgxi_ai  = Array{Float64}(undef, dimG,    1, dimX, dimA,    1, 1)
 	Phxi_ai  = Array{Float64}(undef,    1, dimH, dimX, dimA,    1, 1)
@@ -239,67 +192,24 @@ function main()
 	Pg_h     = Array{Float64}(undef, dimG, dimH,    1,    1,    1, 1)
 	Pxi      = Array{Float64}(undef,    1,    1, dimX,    1,    1, 1)
 
-	C    = CreateWalls(dims, "B")
-	G    = GenerateGoalSet(dims, "fullX", C)
-	Vgx, _Pgxi_ai, _Pgxiai_xj = SolveMazeGoalCond(dims, C, G)
+	Vgx, Qgxa, _Pgxi_ai, _Pgxiai_xj = SolveMazeGoalCond(dims, C, G)
+	Pgxiai_xj[:, 1, :, :, :, 1] = _Pgxiai_xj
+	Pgxi_ai[  :, 1, :, :, 1, 1] = _Pgxi_ai 	
+	Pg      = Normalize( ones(dimG, 1, 1, 1, 1, 1), (idxG,) )
 
-	for Pg_idx in 1
+	beta = 10.0
+	Pgxi_ai, Pxi_ai, Pxi = pgxi_ai_goal( dims, Pg, Qgxa, Pgxiai_xj, beta )
 
-		# 		println(dims)
+	# 	display(reshape(Vgx[1, :, :, :, :, :], (dimX1, dimX2))); println()
+	# 	display(reshape(Qgxa[1, 1, :, :, 1, 1], (dimX, dimA))); println()
+	display(reshape(Pxi[:, :, :, :, :, :], (dimX1, dimX2))); println()
 
-		display( reshape(Vgx[Pg_idx, :, 1, 1], (dimX1, dimX2)) ); println()
+	Pg_ai = sum( Pgxi_ai .* Pxi, dims=idxXi )
 
-		Pg      	= zeros(dimG, 1, 1, 1, 1, 1)
-		Pg[Pg_idx] 	= 1.0
+	goalIB(dims, Pg, Pgxi_ai, Pg_ai, Pxi, 100.0)
 
-
-		# 	display(reshape(Pg, dimX1, dimX2)); println()
-		# 	exit(1)
-
-		Pgxiai_xj[:, 1, :, :, :, 1] = _Pgxiai_xj
-		Pgxi_ai[  :, 1, :, :, 1, 1] = _Pgxi_ai 	
-
-		Pgxi_ai[  :, 1, :, :, 1, 1] = Pgxi_ai[ :, 1, :, :, 1, 1]  + 0.000001*rand(dimG, dimX, dimA)
-		Pgxi_ai = Normalize(Pgxi_ai, (idxAi,))
-
-
-		Pgxi_xj = pgxi_xj(Pgxiai_xj, Pgxi_ai)
-
-		Pxi_xj = pxi_xj(Pgxiai_xj, Pgxi_ai, Pg)
-		Pxi[1, 1, :, 1, 1, 1] = pxi(Pxi_xj)
-
-		# 	Pg_h    = Normalize(rand(dimG, dimH, 1, 1, 1, 1), (2, ))
-		# 	Ph      = ph(Pg_h, Pg)
-		# 	Ph_g    = ph_g(Pg_h, Pg, Ph) 
-		# 	Phxi_ai = phxi_ai(Pgxi_ai, Ph_g)
-		# 
-		# 	Pg_ai   = pg_ai(Pgxi_ai, Pxi)
-		# 	Ph_ai   = ph_ai(Phxi_ai, Pxi)
-
-		# 	println(size(Ph_ai))
-		# 	println(size(Pg_ai))
-
-		# 		Pg_h, Ph, Phxi_ai = goalIB(dims, Pgxi_ai, Pg_idx, Pxi, 1.0)
-		goalIB(dims, Pgxi_ai, Pg_idx, Pxi, 1.0)
-	end
-
-	# 	display(reshape(Ph, dimX1, dimX2)); println()
-	# 	display(reshape(Ph[1, :, 1, 1, 1, 1], (dimX1, dimX2) )); println()
-	# 	display(reshape(Pg[:, 1, 1, 1, 1, 1], (dimX1, dimX2) )); println()
-
-	# 	BETA = 10:-0.5:0.0000001
-	# 	Igh, Ih_xiai, L = goalIB(dims, Pgxi_ai, Pg, Pxi, 1.0)
-
-	# 	display(Igh); println()
-	# 	display(Ih_xiai); println()
-	# 	figure;
-	# 	plot(Igh, Ih_xiai)
-	# 	show()
-	# 	close()
 end
 
 main()
 
-end#module
-
-# p(s, a, h, g) = p(a|s,g)p(g|h)p(h)p(s) 
+end
