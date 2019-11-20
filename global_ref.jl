@@ -19,7 +19,7 @@ pxi_xj(Pgxiai_xj, Pgxi_ai, Pg) = ( sum(Pgxiai_xj .* Pgxi_ai .* Pg, dims=[idxG, i
 
 pgxi(Pgxi_xj, g) = ((Pgxi_xj[g, 1, :, 1, :, 1] ^ 20)[1, :]) 
 
-pxi(Pxi_xj) = ((Pxi_xj[1, 1, :, 1, :, 1] ^ 200)[1, :]) 
+pxi(Pxi_xj) = (reshape((Pxi_xj[1, 1, :, 1, :, 1] ^ 200)[1, :], (1, 1, size(Pxi_xj)[3], 1, 1, 1)))
 
 pxi_ai(Pgxi_ai, Pg)   = ( sum(Pgxi_ai .* Pg, dims=1) )
 
@@ -203,6 +203,8 @@ function main()
 	# 	display(reshape(Vgx[1, :, :, :, :, :], (dimX1, dimX2))); println()
 	# 	display(reshape(Qgxa[1, 1, :, :, 1, 1], (dimX, dimA))); println()
 	display(reshape(Pxi[:, :, :, :, :, :], (dimX1, dimX2))); println()
+
+println((size(Pgxi_ai), size(Pxi)))
 
 	Pg_ai = sum( Pgxi_ai .* Pxi, dims=idxXi )
 
