@@ -3,6 +3,7 @@ module ProbUtils
 
 using LinearAlgebra
 using Random
+using CuArrays
 
 export Expectation!, JointProb!, JointProb, printProb, calcPxiai_xjaj, InitProb, Expectation, TEST_PROB_UNITY, Normalize, Marginal, InitEncoderAtBetaInfty_test, DeltaEncoder, @printMat
 
@@ -93,7 +94,23 @@ function InitEncoderAtBetaInfty_test(dims::Tuple)
 	return Qgxiai_h
 end
 
+function Normalize(tP::CuArray{Float32, }, dims::Tuple)
+	P = broadcast(/, tP, sum(tP, dims=dims))
+	return P
+end
+function Normalize(tP::Array{BigFloat, }, dims::Tuple)
+	P = broadcast(/, tP, sum(tP, dims=dims))
+	return P
+end
+function Normalize(tP::CuArray{Float64, }, dims::Tuple)
+	P = broadcast(/, tP, sum(tP, dims=dims))
+	return P
+end
 function Normalize(tP::Array{Float64, }, dims::Tuple)
+	P = broadcast(/, tP, sum(tP, dims=dims))
+	return P
+end
+function Normalize(tP::Array{Float32, }, dims::Tuple)
 	P = broadcast(/, tP, sum(tP, dims=dims))
 	return P
 end

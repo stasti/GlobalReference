@@ -9,7 +9,7 @@ using LinearAlgebra
 using InfoUtils
 ### sample(["a", "b", "c"], pweights([0.2, 0.5, 0.3]), 10) ###
 
-export SetPxj_xiai, GenerateGoalSet, CreateWalls, InitPxiaig_xj, AvrgStepSize, ActionStrings, EstimatePxa_g, lin2cart, cart2lin, PrintPolicy, ReversePolicy
+export SetPxj_xiai, GenerateGoalSet, CreateWalls, InitPxiaig_xj, AvrgStepSize, ActionStrings, EstimatePxa_g, lin2cart, cart2lin, PrintPolicy, ReversePolicy, SetPxj_xiai_new
 
 
 function ReversePolicy( dims::Tuple, Pxi_ai::Array{Float64} )
@@ -32,7 +32,7 @@ function ReversePolicy( dims::Tuple, Pxi_ai::Array{Float64} )
 		idx = findall(!iszero, Pxi_ai[x, :, 1, 1])
 		Rxi_ai[x, P2R[idx[1]], 1, 1] = 1.0
 	end
-	
+
 	return Rxi_ai
 
 end
@@ -44,17 +44,17 @@ function PrintPolicy(dims::Tuple, Pxi_ai::Array{Float64})
 
 	a = ActionStrings(dimA, true)
 
-# 	for x in 1:dimX
-# 		idx = findall(!iszero, Pxi_ai[x, :, 1, 1])[1]
-# 		for ai in 1:dimA
-# 			if ai == idx
-# 				print(a[idx])
-# 			else
-# 				print("\u2218")
-# 			end
-# 		end
-# 		println()
-# 	end
+	# 	for x in 1:dimX
+	# 		idx = findall(!iszero, Pxi_ai[x, :, 1, 1])[1]
+	# 		for ai in 1:dimA
+	# 			if ai == idx
+	# 				print(a[idx])
+	# 			else
+	# 				print("\u2218")
+	# 			end
+	# 		end
+	# 		println()
+	# 	end
 
 	for x1 in 1:dimX1
 		for x2 in 1:(dimX2-1)
@@ -188,11 +188,6 @@ function Actions(dimA::Int)
 		a[3, :] = [-1,  0]
 		a[4, :] = [ 0, +1]
 		a[5, :] = [ 0,  0]
-# 		a[4, :] = [ 0, -1]
-# 		a[2, :] = [+1,  0]
-# 		a[3, :] = [-1,  0]
-# 		a[1, :] = [ 0, +1]
-# 		a[5, :] = [ 0,  0]
 	end
 	if dimA == 4
 		a[1, :] = [ 0, -1]
@@ -204,6 +199,123 @@ function Actions(dimA::Int)
 	return a
 end
 
+function SetPxj_xiai_new(dims::Tuple, actionProb::Float64, C::Array{Int})
+
+	dimX1, dimX2, dimA, dimG, dimH = dims
+	dimX = dimX1*dimX2
+
+	BuildMazeTransitionProb_DEBUG = false
+
+	epsilon    = eps(Float64)
+	dimX       = dimX1*dimX2
+	Pxiai_xj   = zeros(Float64, dimX, dimA, dimX, 1)
+	actions    = Actions(dimA)
+	actionStr  = ActionStrings(dimA)
+	# 	endCost  = 0.0
+	endCost  = +0.5#0.5
+	endCost  = +0.0#0.5
+	# 	endCost  = #0.5
+	wallCost = -1000000.0
+	cost     = -1.0 
+	# 	cost     = -0.0 
+	R        = cost*ones(Int, dimX, dimA, dimX, 1)
+	Xf = -1
+	stayAction = 5
+	for xi = 1:dimX
+
+
+		crnt_i, crnt_j = lin2cart(dimX1, dimX2, xi)
+
+		if C[crnt_i, crnt_j] == 0
+			continue
+		end
+	
+		nextStates     = ValidNeighborhood(dims, xi, C) 
+		numNextValid   = countnz(nextStates)
+
+		if xi == Xf && false # no absorbing state
+			R[xi, :, Xf] .= endCost
+			# 			R[xi, stayAction, Xf] = 0.0
+			### absorbing ###
+			Pxiai_xj[xi, :, Xf] .= 1.0
+
+			### not absorbing ###
+			# 			Pxiai_xj[xi, stayAction, Xf] = 1.0
+			continue
+		end
+
+		for ai = 1:dimA
+
+# 			println("xi[$(xi)], $(actionStr[ai])")
+			next_i, next_j = crnt_i+actions[ai, 1], crnt_j+actions[ai, 2]
+
+			xj = cart2lin(dimX1, dimX2, next_i, next_j)
+			nextByAction = isValidNeighborhood(dims, C, next_i, next_j)
+# 			display(reshape(nextByAction, 3, 3));  println();
+
+			if countnz(nextByAction) == 0 # action is not valid
+				if true # last working 
+					Pxiai_xj[xi, ai, xi] = 1.0
+				else
+					# 					Pxiai_xj[xi, ai, xi] = 0.8
+					# 					Pxiai_xj[xi, ai, setdiff(1:dimX, xi)].=(1-0.8)/(length(setdiff(1:dimX,xi)))
+					Pxiai_xj[xi, ai, :] .= 1/dimX 
+				end
+				if Bool(next_i>0) && Bool(next_j>0) && xj > 0  
+					R[xi, ai, xj] = wallCost
+				end
+			else
+				Pxiai_xj[xi, ai, findall(!iszero, nextByAction)] .= actionProb
+
+				test_diff = true
+				if test_diff
+					nextByAction_j = []
+					for aj = 1:dimA
+						if aj == ai
+							continue
+						end
+						z_i, z_j = crnt_i+actions[aj, 1], crnt_j+actions[aj, 2]
+						z_lin    = cart2lin(dimX1, dimX2, z_i, z_j)
+						if 0<z_i<=dimX1 && 0<z_j<=dimX2
+							if C[z_i, z_j] == 1
+								push!(nextByAction_j, z_lin)
+							end
+						end
+
+					end
+					
+# 					tmp = sum(findall(!iszero, nextByAction_j))
+# 					display(nextByAction_j)
+# 					display(nextByAction)
+for k in 1:length(nextByAction_j)
+	Pxiai_xj[xi, ai, nextByAction_j[k]] = (1-actionProb)/(length(nextByAction_j))  
+end
+
+
+				end#test_diff
+
+
+
+				if false
+					Pxiai_xj[xi, ai, findall(iszero, nextByAction)] .= (1-actionProb)/(dimX-1)  
+				end
+			end
+		end
+	end
+
+
+# 	display(sum(Pxiai_xj, dims=3))
+
+# 	for xi = 1:dimX
+# 		for ai in 1:dimA
+# 			println("x[$(xi)], a[$(actionStr[ai])]")
+# 			display(reshape(Pxiai_xj[xi, ai, :], (dimX1, dimX2))); println()
+# 		end
+# 	end
+# 
+# 	exit(1)
+	return Pxiai_xj, R
+end
 function SetPxj_xiai(dims::Tuple, actionProb::Float64, C::Array{Int})
 
 	dimX1, dimX2, dimA, dimG, dimH = dims
@@ -224,7 +336,7 @@ function SetPxj_xiai(dims::Tuple, actionProb::Float64, C::Array{Int})
 	cost     = -1.0 
 	# 	cost     = -0.0 
 	R        = cost*ones(Int, dimX, dimA, dimX, 1)
-Xf = -1
+	Xf = -1
 	stayAction = 5
 	for xi = 1:dimX
 
@@ -245,10 +357,13 @@ Xf = -1
 		end
 
 		for ai = 1:dimA
+
+# 			println("xi[$(xi)], $(actionStr[ai])")
 			next_i, next_j = crnt_i+actions[ai, 1], crnt_j+actions[ai, 2]
 
 			xj = cart2lin(dimX1, dimX2, next_i, next_j)
 			nextByAction = isValidNeighborhood(dims, C, next_i, next_j)
+# 			display(reshape(nextByAction, 3, 3));  println();
 
 			if countnz(nextByAction) == 0 # action is not valid
 				if true # last working 
@@ -264,6 +379,7 @@ Xf = -1
 			else
 				# 				Pxj_xiai[xi, ai, find(vec(nextByAction))] .= 1.0  
 				Pxj_xiai[xi, ai, findall(!iszero, nextByAction)] .= actionProb
+
 				if false
 					Pxj_xiai[xi, ai, findall( iszero, nextByAction)] .= (1-actionProb)/(dimX-1)  
 					# 				else
@@ -273,11 +389,13 @@ Xf = -1
 		end
 
 	end
-
+# exit(1)
 	return Pxj_xiai, R
 end
 
 function SetPxj_xiai(dims::Tuple, actionProb::Float64, C::Array{Int, }, Xf::Int)
+
+# 	println("START: SetPxj_xiai Xf=$(Xf)")
 
 	dimX1, dimX2, dimA, dimG, dimH = dims
 	dimX = dimX1*dimX2
@@ -287,10 +405,11 @@ function SetPxj_xiai(dims::Tuple, actionProb::Float64, C::Array{Int, }, Xf::Int)
 	epsilon    = eps(Float64)
 	dimX       = dimX1*dimX2
 	Pxj_xiai   = zeros(Float64, dimX, dimA, dimX, 1)
+
 	actions    = Actions(dimA)
 	actionStr  = ActionStrings(dimA)
 	# 	endCost  = 0.0
-	endCost  = +0.5#0.5
+# 	endCost  = +0.5#0.5
 	endCost  = +0.0#0.5
 	# 	endCost  = #0.5
 	wallCost = -1000000.0
@@ -298,7 +417,8 @@ function SetPxj_xiai(dims::Tuple, actionProb::Float64, C::Array{Int, }, Xf::Int)
 	# 	cost     = -0.0 
 	R        = cost*ones(Int, dimX, dimA, dimX, 1)
 
-	stayAction = 5
+	stayAction = length(actions)
+
 	for xi = 1:dimX
 
 		crnt_i, crnt_j = lin2cart(dimX1, dimX2, xi)
@@ -308,16 +428,37 @@ function SetPxj_xiai(dims::Tuple, actionProb::Float64, C::Array{Int, }, Xf::Int)
 
 		if xi == Xf
 			R[xi, :, Xf] .= endCost
+
 			# 			R[xi, stayAction, Xf] = 0.0
 			### absorbing ###
 			Pxj_xiai[xi, :, Xf] .= 1.0
+
+			if C[crnt_i, crnt_j] == 0
+				R[xi, :, Xf] .= wallCost
+			Pxj_xiai[xi, :, Xf] .= 0.0
+			end
 
 			### not absorbing ###
 			# 			Pxj_xiai[xi, stayAction, Xf] = 1.0
 			continue
 		end
+biasDown = false
 
 		for ai = 1:dimA
+
+			if biasDown
+				for aj = 2 # action down bias
+					next_i, next_j = crnt_i+actions[aj, 1], crnt_j+actions[aj, 2]
+
+					xj = cart2lin(dimX1, dimX2, next_i, next_j)
+					nextByAction = isValidNeighborhood(dims, C, next_i, next_j)
+
+					if countnz(nextByAction) != 0 # action is not valid
+						Pxj_xiai[xi, aj, findall(!iszero, nextByAction)] .= 0.2
+					end
+				end
+			end # action down bias
+
 			next_i, next_j = crnt_i+actions[ai, 1], crnt_j+actions[ai, 2]
 
 			xj = cart2lin(dimX1, dimX2, next_i, next_j)
@@ -327,25 +468,21 @@ function SetPxj_xiai(dims::Tuple, actionProb::Float64, C::Array{Int, }, Xf::Int)
 				if true # last working 
 					Pxj_xiai[xi, ai, xi] = 1.0
 				else
-					# 					Pxj_xiai[xi, ai, xi] = 0.8
-					# 					Pxj_xiai[xi, ai, setdiff(1:dimX, xi)].=(1-0.8)/(length(setdiff(1:dimX,xi)))
 					Pxj_xiai[xi, ai, :] .= 1/dimX 
 				end
 				if Bool(next_i>0) && Bool(next_j>0) && xj > 0  
 					R[xi, ai, xj] = wallCost
 				end
 			else
-				# 				Pxj_xiai[xi, ai, find(vec(nextByAction))] .= 1.0  
 				Pxj_xiai[xi, ai, findall(!iszero, nextByAction)] .= actionProb
-				if false
-					Pxj_xiai[xi, ai, findall( iszero, nextByAction)] .= (1-actionProb)/(dimX-1)  
-					# 				else
-
-				end
+				Pxj_xiai[xi, ai, findall( iszero, nextByAction)] .= (1-actionProb)/(dimX-1)  
 			end
 		end
 
+
 	end
+
+	Pxj_xiai = Normalize(Pxj_xiai, (3, ))
 
 	return Pxj_xiai, R
 end
@@ -372,17 +509,21 @@ function InitPxiaig_xj(dims::Tuple, G::Array{Int, }, C::Array{Int, }, actionProb
 
 	dimX = dimX1*dimX2
 
+	println(dims)
+
 	# 	Pxiaig_xj = Array{Float64}(undef, dimX, dimA, dimG, 1, dimX, 1)
 	# 	Rxiaigxj  = Array{Float64}(undef, dimX, dimA, dimG, 1, dimX, 1)
 
-# 	Pxiaig_xj = Array{Float64}(undef, dimG, dimX, dimA, 1, dimX, 1, 1)
-# 	Rxiaigxj  = Array{Float64}(undef, dimG, dimX, dimA, 1, dimX, 1, 1)
+	# 	Pxiaig_xj = Array{Float64}(undef, dimG, dimX, dimA, 1, dimX, 1, 1)
+	# 	Rxiaigxj  = Array{Float64}(undef, dimG, dimX, dimA, 1, dimX, 1, 1)
 	Pxiaig_xj = Array{Float64}(undef, dimG, dimX, dimA, dimX, 1)
 	Rxiaigxj  = Array{Float64}(undef, dimG, dimX, dimA, dimX, 1)
 
 	for gi in 1:dimG
 		Pxiaig_xj[gi, :, :, :, :],
-	        Rxiaigxj[gi, :, :, :, :] = SetPxj_xiai(dims, actionProb, C, G[gi])
+		Rxiaigxj[gi, :, :, :, :] = SetPxj_xiai(dims, actionProb, C, gi)
+# 		Rxiaigxj[gi, :, :, :, :] = SetPxj_xiai(dims, actionProb, C, G[gi])
+		# 		Rxiaigxj[gi, :, :, 1, :, 1, 1] = SetPxj_xiai(dims, actionProb, C)
 	end
 
 	return Pxiaig_xj, Rxiaigxj
@@ -428,7 +569,7 @@ function GenerateGoalSet(dims::Tuple, goalType::String, walls::Array{Int,})
 	end
 
 
-	println("$(goalType), G=$(G)")
+	println("$(goalType), G=$(G), len=$(length(G))")
 	# 	return G, length(G)
 	return G
 end
@@ -487,14 +628,14 @@ function WallsTypeK(dimX1::Int, dimX2::Int)
 
 	C[wall_i, wall_j + convert(Int,floor((1/5)*dimX2))] = 1
 
-# 	if usePyPlot && false # checked
-# 		figure
-# 		PyPlot.matplotlib[:rc]("text", usetex=true)
-# 		fig = PyPlot.imshow(C, cmap="bone", interpolation="none")
-# 		colorbar(fig, ticks=[minimum(C), maximum(C)])
-# 		show()
-# 		exit(1)
-# 	end
+	# 	if usePyPlot && false # checked
+	# 		figure
+	# 		PyPlot.matplotlib[:rc]("text", usetex=true)
+	# 		fig = PyPlot.imshow(C, cmap="bone", interpolation="none")
+	# 		colorbar(fig, ticks=[minimum(C), maximum(C)])
+	# 		show()
+	# 		exit(1)
+	# 	end
 
 	return C
 
@@ -529,6 +670,32 @@ function WallsTypeM(dimX1::Int, dimX2::Int)
 		colorbar(fig, ticks=[minimum(C), maximum(C)])
 		show()
 		exit(1)
+	end
+
+	return C
+
+end
+
+function WallsTypeBlocks(dimX1::Int, dimX2::Int)
+
+	N = 3
+	dimX = dimX1*dimX2
+	C    = ones(Int64, dimX1, dimX2)
+	
+	dX = convert(Int, floor(dimX2/N))
+	dX1 = convert(Int, floor(dX/2))
+
+	dY = convert(Int, floor(dimX2/N))
+	dY1 = convert(Int, floor(dY/2))
+
+	x_c = range(dX1, step=dX, stop=dimX2-dX1)
+	y_c = range(dY1, step=dY, stop=dimX1-dY1)
+
+# println(x_c)
+# println(y_c)
+
+	for xi in x_c, yi in y_c 
+		C[xi-2:xi+2, yi-2:yi+2] .= 0
 	end
 
 	return C
@@ -603,16 +770,204 @@ function WallsTypeF(dimX1::Int, dimX2::Int)
 	wall_j = convert(Int, floor(1/3*dimX2))
 	C[wall_i-width:wall_i+width, wall_j:dimX2] .= 0
 
-# 	if usePyPlot && false # checked
-# 		figure
-# 		PyPlot.matplotlib[:rc]("text", usetex=true)
-# 		fig = PyPlot.imshow(C, cmap="bone", interpolation="none")
-# 		colorbar(fig, ticks=[minimum(C), maximum(C)])
-# 		show()
-# 	end
 
 	return C
 end
+
+
+function WallsTypeRandomHrzn(dimX1, dimX2)
+
+	C    = ones(Int64, dimX1, dimX2)
+
+	nWalls = convert(Int, floor(0.75*dimX1))
+
+
+	for n in 1:nWalls
+		start = (rand(1:dimX1, 1)[1], rand(1:dimX2, 1)[1])
+		len   = rand(1:convert(Int, floor(0.5*dimX1)), 1)[1]
+		dir   = rand((2, 4), 1)[1]
+
+
+		# 	start = (9, 9)
+		# 	dir = 4
+		# 	len= 3
+
+		# 		println((start, len, dir))
+		if dir == 1 #up
+			len = start[1]-len >= 0 ? len : start[1]  
+			# 			println(len)
+			# 			println( start[1]:-1:(start[1]-len) )
+			C[start[1]:-1:(start[1]-len+1), start[2]] .= 0
+		elseif dir == 2 #right
+			len = start[2]+len <= dimX1 ? len : dimX1 - start[2]  
+			C[start[1], start[2]:(start[2]+len-1)] .= 0
+		elseif dir == 3 # down
+			len = start[1]+len <= dimX2 ? len : dimX2 - start[1]  
+			C[start[1]:(start[1]+len-1), start[2]] .= 0
+		elseif dir == 4 # left
+			len = start[2]-len >= 0 ? len : start[2]  
+			C[start[1], start[2]:-1:(start[2]-len+1)] .= 0
+		end
+	end
+
+	return C
+end
+function WallsTypeRandomVert(dimX1, dimX2)
+
+	C    = ones(Int64, dimX1, dimX2)
+
+	nWalls = convert(Int, floor(0.75*dimX1))
+
+
+	for n in 1:nWalls
+		start = (rand(1:dimX1, 1)[1], rand(1:dimX2, 1)[1])
+		len   = rand(1:convert(Int, floor(0.5*dimX1)), 1)[1]
+		dir   = rand((1, 3), 1)[1]
+
+
+		# 	start = (9, 9)
+		# 	dir = 4
+		# 	len= 3
+
+		# 		println((start, len, dir))
+		if dir == 1 #up
+			len = start[1]-len >= 0 ? len : start[1]  
+			# 			println(len)
+			# 			println( start[1]:-1:(start[1]-len) )
+			C[start[1]:-1:(start[1]-len+1), start[2]] .= 0
+		elseif dir == 2 #right
+			len = start[2]+len <= dimX1 ? len : dimX1 - start[2]  
+			C[start[1], start[2]:(start[2]+len-1)] .= 0
+		elseif dir == 3 # down
+			len = start[1]+len <= dimX2 ? len : dimX2 - start[1]  
+			C[start[1]:(start[1]+len-1), start[2]] .= 0
+		elseif dir == 4 # left
+			len = start[2]-len >= 0 ? len : start[2]  
+			C[start[1], start[2]:-1:(start[2]-len+1)] .= 0
+		end
+	end
+
+	return C
+end
+function WallsTypeFFF(dimX1, dimX2)
+
+	C    = ones(Int64, dimX1, dimX2)
+
+	nWalls = convert(Int, floor(0.25*dimX1))
+	dWall  = convert(Int, floor(dimX1/nWalls))	
+
+	for n in 1:nWalls-1
+
+		start = (n*dWall, n % 2 == 0 ? dimX2 : 1)
+		len   = convert(Int, floor(0.85*dimX2))
+		dir   = n % 2 == 0 ? 4 : 2
+
+		if dir == 1 #up
+			len = start[1]-len >= 0 ? len : start[1]  
+			C[start[1]:-1:(start[1]-len+1), start[2]] .= 0
+		elseif dir == 2 #right
+			len = start[2]+len <= dimX2 ? len : dimX2 - start[2]  
+			C[start[1], start[2]:(start[2]+len-1)] .= 0
+		elseif dir == 3 # down
+			len = start[1]+len <= dimX1 ? len : dimX1 - start[1]  
+			C[start[1]:(start[1]+len-1), start[2]] .= 0
+		elseif dir == 4 # left
+			len = start[2]-len >= 0 ? len : start[2]  
+			C[start[1], start[2]:-1:(start[2]-len+1)] .= 0
+		end
+	end
+
+	return C
+end
+
+function WallsTypeGlobalRef5x5r9(dimX1, dimX2)
+
+	C    = ones(Int64, dimX1+1, dimX2+1)
+	dW   = convert(Int, (dimX1 + 2) / 3)
+
+	C[dW:dW:dimX1, :] .= 0
+	C[:, dW:dW:dimX2] .= 0
+
+	dH = convert(Int, (((dimX1 - 1) / 3) + 1)/2 )
+	dZ = convert(Int, (((dimX1 - 1) / 3) + 1)   ) 
+
+	C[dH:dZ:dimX1, :] .= 1
+	C[:, dH:dZ:dimX2] .= 1
+
+	return C
+end
+function WallsTypeFF(dimX1, dimX2)
+
+	C    = ones(Int64, dimX1, dimX2)
+
+
+	nWalls = convert(Int, floor(0.25*dimX1))
+	dWall  = convert(Int, floor(dimX1/nWalls))	
+
+
+
+	for n in 1:nWalls-1
+
+		start = (n*dWall, n % 2 == 0 ? dimX2 : 1)
+		len   = convert(Int, floor(0.85*dimX2))
+		dir   = n % 2 == 0 ? 4 : 2
+
+		if dir == 1 #up
+			len = start[1]-len >= 0 ? len : start[1]  
+			C[start[1]:-1:(start[1]-len+1), start[2]] .= 0
+		elseif dir == 2 #right
+			len = start[2]+len <= dimX2 ? len : dimX2 - start[2]  
+			C[start[1], start[2]:(start[2]+len-1)] .= 0
+		elseif dir == 3 # down
+			len = start[1]+len <= dimX1 ? len : dimX1 - start[1]  
+			C[start[1]:(start[1]+len-1), start[2]] .= 0
+		elseif dir == 4 # left
+			len = start[2]-len >= 0 ? len : start[2]  
+			C[start[1], start[2]:-1:(start[2]-len+1)] .= 0
+		end
+	end
+
+	return C
+end
+
+function WallsTypeRandom(dimX1, dimX2)
+
+	C    = ones(Int64, dimX1, dimX2)
+
+	nWalls = convert(Int, floor(0.5*dimX1))
+
+
+	for n in 1:nWalls
+		start = (rand(1:dimX1, 1)[1], rand(1:dimX2, 1)[1])
+		len   = rand(1:convert(Int, floor(0.5*dimX1)), 1)[1]
+		dir   = rand(1:4, 1)[1]
+
+
+		# 	start = (9, 9)
+		# 	dir = 4
+		# 	len= 3
+
+		# 		println((start, len, dir))
+		if dir == 1 #up
+			len = start[1]-len >= 0 ? len : start[1]  
+			# 			println(len)
+			# 			println( start[1]:-1:(start[1]-len) )
+			C[start[1]:-1:(start[1]-len+1), start[2]] .= 0
+		elseif dir == 2 #right
+			len = start[2]+len <= dimX2 ? len : dimX2 - start[2]  
+			C[start[1], start[2]:(start[2]+len-1)] .= 0
+		elseif dir == 3 # down
+			len = start[1]+len <= dimX1 ? len : dimX1 - start[1]  
+			C[start[1]:(start[1]+len-1), start[2]] .= 0
+		elseif dir == 4 # left
+			len = start[2]-len >= 0 ? len : start[2]  
+			C[start[1], start[2]:-1:(start[2]-len+1)] .= 0
+		end
+	end
+
+	return C
+end
+# 
 
 function WallsTypeE(dimX1::Int, dimX2::Int)
 	dimX = dimX1*dimX2
@@ -681,6 +1036,18 @@ function WallsTypeB(dimX1::Int, dimX2::Int)
 
 	return C
 end
+
+function WallsTypeTest3x3(dimX1::Int, dimX2::Int)
+
+	println("CREATED: WallsTypeTest3x3 at $(@__LINE__)")
+
+	dimX = dimX1*dimX2
+	C    = ones(Int64, dimX1, dimX2)
+	C[2, 1:2] .= 0
+
+	return C
+end
+
 # function CreateWalls(dims::Array{Int,}, wallTypeArg::String)
 function CreateWalls(dims::Tuple, wallTypeArg::String)
 
@@ -707,10 +1074,39 @@ function CreateWalls(dims::Tuple, wallTypeArg::String)
 	elseif wallTypeArg == "Z"
 		wallType = "WallZ"
 		C     = WallsTypeZ(dimX1, dimX2)
+	elseif wallTypeArg == "Random"
+		wallType = "WallRandom"
+		println("wallRandom")
+		C     = WallsTypeRandom(dimX1, dimX2)
+	elseif wallTypeArg == "RandomVert"
+		wallType = "WallRandomVert"
+		println("wallRandomVert")
+		C     = WallsTypeRandomVert(dimX1, dimX2)
+	elseif wallTypeArg == "RandomHrzn"
+		wallType = "WallRandomHrzn"
+		println("wallRandomHrzn")
+		C     = WallsTypeRandomHrzn(dimX1, dimX2)
+	elseif wallTypeArg == "FF"
+		wallType = "WallFF"
+		println("wallFF")
+		C     = WallsTypeFF(dimX1, dimX2)
+	elseif wallTypeArg == "Blocks"
+		wallType = "WallBlocks"
+		println("wallBlocks")
+		C     = WallsTypeBlocks(dimX1, dimX2)
+	elseif wallTypeArg == "Test3x3"
+		wallType = "WallTest3x3"
+		println(wallType)
+		C     = WallsTypeTest3x3(dimX1, dimX2)
+	elseif wallTypeArg == "GlobalRef5x5r9"
+		wallType = "GlobalRef5x5r9"
+		println(wallType)
+		C     = WallsTypeGlobalRef5x5r9(dimX1, dimX2)
 	end
 
-	display(C)
-	println()
+# 	display(C)
+# 	println()
+# 		exit(1)
 
 	return C
 end

@@ -1,7 +1,6 @@
-module DP
+module __DP
 
 using LinearAlgebra
-using RandomPolicy_tmp
 using ProbUtils
 using GridWorld
 using InfoUtils
@@ -19,27 +18,32 @@ const nDP   = 100
 
 function SolveMazeGoalCond(dims::Tuple, C::Array{Int}, G::Array{Int})
 
-	dimX1, dimX2, dimA = dims 
+	dimX1, dimX2, dimA, dimG, dimH = dims 
 	dimX = dimX1*dimX2
-	dimG = dimX
+# 	dimG = dimX
+
+	println(dims)
 
 	actionProb = 1.0
 
-	Pgxi_ai   = Array{Float64}(undef, dimX, dimX, dimA, 1, 1)
+	Pgxi_ai   = Array{Float64}(undef, dimG, dimX, dimA, 1, 1)
 	Pgxiai_xj, Rgxiaixj = InitPxiaig_xj(dims, G, C, actionProb)
 	Pxiai_xj = Array{Float64}(undef, dimX, dimA, dimX, 1)
 	Rxiaixj  = Array{Float64}(undef, dimX, dimA, dimX, 1)
-	Vgx      = Array{Float64}(undef, dimX, dimX,    1, 1)
+	Vgx      = Array{Float64}(undef, dimG, dimX,    1, 1)
+	Qgxa     = Array{Float64}(undef, dimG,    1, dimX, dimA, 1, 1)
 
-	for g in 1:length(G)
+	for g in 1:dimG#length(G)
 		Pxiai_xj = Pgxiai_xj[g, :, :, :, :]
 		Rxiaixj  =  Rgxiaixj[g, :, :, :, :]
-		V, Pxi_ai =  SolveMaze(dims, C, Pxiai_xj, Rxiaixj)
+		V, Q, Pxi_ai = SolveMaze(dims, C, Pxiai_xj, Rxiaixj)
 		Pgxi_ai[g, :, :, 1, 1] = Pxi_ai
 		Vgx[g, :, 1, 1] = V
+		Qgxa[g, 1, :, :, 1, 1] = Q
 	end
 
-	return Vgx, Pgxi_ai, Pgxiai_xj
+	return Vgx, Qgxa, Pgxi_ai, Pgxiai_xj
+
 end
 
 
@@ -96,7 +100,7 @@ function SolveMaze(dims, C, Pxiai_xj, Rxiaixj)
 		end
 	end
 
-	return Expectation(Qi, Pxi_ai, [2]), Pxi_ai
+	return Expectation(Qi, Pxi_ai, [2]), Qi, Pxi_ai
 
 end
 
@@ -359,7 +363,7 @@ function LogValueIterationGivenEncoder( dims::Tuple,
 
 	Lxiai 		= zeros(1, dimX, dimA, 1, 1, 1, 1 )			
 	Lxiai_prev      = Lxiai
-	Pxjh_aj         = RandomPolicy(dims, true) 
+# 	Pxjh_aj         = RandomPolicy(dims, true) 
 
 	for i = 1:100
 		Pxiai_xjai = sum(JointProb(Pg,JointProb(Qgxiai_h,JointProb(PgxCaC_xN, Pxjh_aj))),dims=[1, 7])
@@ -546,7 +550,7 @@ function LogValueIteration(	dims::Tuple,
 
 	Lxiai 		= zeros(1, dimX, dimA, 1, 1, 1, 1 )			
 	Lxiai_prev 		= Lxiai
-	Pxih_ai         = RandomPolicy(dims) 
+# 	Pxih_ai         = RandomPolicy(dims) 
 
 	for i = 1:100
 		_, Z 		=  EntropyEncoder(dims, Pxih_ai, PgxCaC_xN, Lxiai, gamma)
